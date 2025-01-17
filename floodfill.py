@@ -344,7 +344,6 @@ floodfill(ring, 1000, 0, 0.1)  # 17 minuts.
 getacc(ring, 1000, 0, 0.1, True) # 31 minuts
 getacc(ring, 1000, 0, 0.1, False) # 74 minuts
 track(ring, 1000, 0, 0.1, True)  # 26 minuts
-track(ring, 1000, 0, 0.1, False)
 
 floodfill(ring, 7000, 0, 0.1) # 1.5 hores. ho fa bé però em fa sortir uns missatges: "IOStream.flush timed out"
 getacc(ring, 7000, 0, 0.1, True) # 3.5 hores
@@ -354,6 +353,6 @@ floodfillpy(ring, 1000, 0, 0.1) # 22 minuts
 getaccpy(ring, 1000, 0, 0.1, True) # 18 minuts
 getaccpy(ring, 1000, 0, 0.1, False) # 54 minuts
 
-floodfillpy(ring, 7000, 0, 0.1) # 1.5 hores
-getaccpy(ring, 7000, 0, 0.1, True) # 
-getaccpy(ring, 7000, 0, 0.1, False) # 
+floodfillpy(ring, 7000, 0, 0.1) # 1.55 hores
+getaccpy(ring, 7000, 0, 0.1, True) # 1.85 hores
+getaccpy(ring, 7000, 0, 0.1, False) # 5.45 hores
