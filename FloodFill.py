@@ -25,16 +25,14 @@ def floodfill (ring, nvoltes, delta, step):
     yvals = np.arange(5, -5.1, -step) 
     punts = [(y,x) for y in yvals for x in xvals] # d'esquerra a dreta, de dalt a baix
     nx = len(xvals)
-    npart = len(punts) # =nx*ny
+    npart = len(punts)
     coord = np.reshape(punts, (npart,2))
     coord = np.transpose(coord)
-    closed = at.find_orbit(ring) # no poso find_orbit6 perquè així si vull ring.disable_6d no ho he de canviar
-    #closed = at.find_orbit6(ring, dp=delta) # Aquest delta és el offset d'energia de la closed orbit. Des/commentar aquesta línia al contrari que 31 i 36
+    closed = at.find_orbit(ring)
     particules = np.zeros((6,npart))
     particules[0] = coord[1]*1e-3 + 1e-5
     particules[2] = coord[0]*1e-3 + 1e-5
-    particules[4] = delta # Això és la variació d'energia de les partícules sobre la closed (on ja està sumat el offset incial!!)
-    #particules += closed[0].reshape(6,1) # al fer això també estic sumant les coord x,y... de la closed (en algun cas la x és no despreciable i el gràfic es mou una mica cap a un costat!)
+    particules[4] = delta
     particules[5] = closed[0][5]
     
     cua = [] # guardarà les partícules a explorar
@@ -71,10 +69,9 @@ def floodfill (ring, nvoltes, delta, step):
     plt.xlabel('x (mm)')
     plt.ylabel('y (mm)')
     plt.savefig('da_ff_'+str(nvoltes)+'_'+str(round(delta*1e2,2))+'.jpeg')
-    # Bo per a latex: fig.savefig('nom.eps', format='eps', dpi=1200) (però amb el previsualitzador de l'ordinador no es veu massa bé)
     
     # Ara per a trobar la frontera de DA ens quedem amb els punts noperd més propers a l'origen
-    radis = np.sqrt(noperd[0]**2 + (2*noperd[1])**2) # multiplico y per 2 per a fer-ho un cercle no aixafat
+    radis = np.sqrt(noperd[0]**2 + (2*noperd[1])**2)
     angles = np.arctan2(2*noperd[1], noperd[0])
     numangles = 360
     rangtheta = np.linspace(-np.pi, np.pi, numangles, endpoint=False)
@@ -87,7 +84,7 @@ def floodfill (ring, nvoltes, delta, step):
             idx_minim = idx_candidats[np.argmin(radis[idx_candidats])] # escullo el més proper a l'origen
             frontera = np.hstack((frontera, ([[noperd[0][idx_minim]], [noperd[1][idx_minim]]])))
     
-    #Aquí hauria d'afegir lo de moving average per a descartar els punts que s'escapen
+    #Aquí hauria d'afegir lo de moving average o algo per a descartar els punts que s'escapen
     #dist = np.sqrt(frontera[0]**2 + frontera[1]**2)
     #np.convolve(dist, np.ones(N)/N, mode='valid')
     #...
@@ -114,7 +111,7 @@ def floodfill (ring, nvoltes, delta, step):
     mp.create_dataset('boundary',data=frontera)
     f.close()          
             
-    #return (exp, noexp, noperd, frontera)
+    return (exp, noexp, noperd, frontera)
 
 
 def getacc (ring, nvoltes, delta, step, mp):
@@ -213,16 +210,16 @@ def floodfillpx (ring, nvoltes, delta, step):
     plt.ylabel('px (mrad)')
     plt.savefig('da_ff_px_'+str(nvoltes)+'_'+str(round(delta*1e2,2))+'.jpeg')
     radis = np.sqrt(noperd[0]**2 + (10*noperd[1])**2) # multiplico els px per 10 per a donar-los-hi més pes
-    angles = np.arctan2(10*noperd[1], noperd[0]) # si no, tenim una el·lipse molt aixafada, i els punts de la frontera no són equidistants
+    angles = np.arctan2(10*noperd[1], noperd[0])
     numangles = 360
     rangtheta = np.linspace(-np.pi, np.pi, numangles, endpoint=False)
     frontera = np.empty((2,0))
     for theta in rangtheta:
-        marge = 2*np.pi / numangles  # Divideixo el cercle en sectors
+        marge = 2*np.pi / numangles 
         sector = (angles >= theta - marge) & (angles < theta + marge)
         if np.any(sector): 
-            idx_candidats = np.where(sector)[0] # els punts noperd dins el sector
-            idx_minim = idx_candidats[np.argmin(radis[idx_candidats])] # escullo el més proper a l'origen
+            idx_candidats = np.where(sector)[0]
+            idx_minim = idx_candidats[np.argmin(radis[idx_candidats])]
             frontera = np.hstack((frontera, ([[noperd[0][idx_minim]], [noperd[1][idx_minim]]])))
     plt.figure(figsize=(16,8))
     plt.scatter(exp[0]*1e3, exp[1]*1e3, color='lightgrey')
@@ -332,13 +329,6 @@ def getaccpy (ring, nvoltes, delta, step, mp):
 
 
 # EXECUCIÓ
- 
-def comparativa (ring, nvoltes, delta, step): # tot i que potser fa petar l'ordinador
-    floodfill(ring, nvoltes, delta, step)
-    getacc(ring, nvoltes, delta, step, True)
-    getacc(ring, nvoltes, delta, step, False)
-    track(ring, nvoltes, delta, step, True)
-    track(ring, nvoltes, delta, step, False)
         
 floodfill(ring, 1000, 0, 0.1)  # 17 minuts.
 getacc(ring, 1000, 0, 0.1, True) # 31 minuts
