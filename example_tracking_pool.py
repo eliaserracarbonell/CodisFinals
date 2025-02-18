@@ -34,7 +34,7 @@ if __name__ == "__main__":
                     kwds=dict(nturns=nturns, losses=True),
                 )
                 results.append(result)
-                tracked[idxproc] = True
+                tracked[idx] = True
             print(f"Block {idxblock} of {nblocks} launched", end="")
             for r in results:
                 r.wait()
