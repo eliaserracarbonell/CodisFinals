@@ -47,7 +47,7 @@ def floodfill(ring, nturns=1000, delta=0, step=0.1):
     notlost = np.empty((2,0)) # Not lost particles (after tracking)
     queue = [] # Particles to be tracked
     queue.append(0) # Start from the top left
-    done = [] # Keep track of the ones that have been tracked
+    done = [] # Keep count of the ones that have been tracked
     while len(queue)!=0:
         i = queue.pop(0) # Take the first particle out of the queue and track it:
         if (0 <= i < npart) and (i not in done):
@@ -120,7 +120,7 @@ def floodfill(ring, nturns=1000, delta=0, step=0.1):
     f = h5py.File(name,'w')
     mp = f.create_group('floodfill')
     mp.create_dataset('turns',data=np.array([nturns]))
-    mp.create_dataset('dp',data=np.array([delta]))
+    mp.create_dataset('dp/p',data=np.array([delta]))
     mp.create_dataset('step',data=np.array([step]))
     mp.create_dataset('execution_time (min)',data=np.array([exec_time]))
     mp.create_dataset('explored_lost',data=lost)
