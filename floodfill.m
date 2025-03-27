@@ -1,30 +1,54 @@
 function [ boundary, pnotlostdata, plostdata] = floodfill(ring, varargin)
-% floodfill(ring)
+% [ boundary, pnotlostdata, plostdata] = floodfill(ring)
 %
-% Finds the Dynamic Aperture of the lattice using Flood Fill.
+% Finds the D.A. of the lattice using Flood Fill.
+%
+% Flood fill tracks particles from the exterior to the border of the D.A.
+% The lost particles are returned in plostdata.
+% The not lost particles are returned in pnotlostdata.
+% The boundary is found by choosing a center and spliting the space in n
+% sectors. Then, the particle with minimum distance to the center per
+% sector returned as part of the boundary.
 % 
 % Parameters:
-%     ring:       Lattice definition
+%   ring:       AT lattice.
 % 
 % Keyword Arguments:
-%     nturns:     Number of turns for the tracking. Default: 1000
-%     delta:      Momentum offset dp/p. Default: 0
-%     xmax:       Maximum value of x, in mm. Default: 10
-%     ymax:       Maximum value of y, in mm. Default: 5
-%     xstep:      Minumum distance between two particles in x axis, in mm. Default: 0.1
-%     ystep:      Minimum distance between two particles in y axis, in mm. Default: 0.1
+%   nturns:     Number of turns for the tracking. Default: 1000
+%   window:     Min and max coordinate range.
+%               Default [-10e-3,10e-3,-5e-3,5e-3]
+%   delta:      Momentum offset dp/p. Default: 0
+%   gridsize:   Number of steps per axis. Default [10,10]
+%   axes:       Indexes of axes to be scanned. Default [1,3]
+%   sixdoffset: Offset to be added. Default zeros(6,1)
+%   userefcenter: Use the 'refcenter' as the boundary center. Default 0.
+%   refcenter:  Used only when 'userefcenter' is not 0.
+%               Define the center of the boundary (6,1).
+%               If not given the mean coordinate of the surviving
+%               particles is calculated per axis.
+%   verbose:    Print extra info. Default 0.
+%   docloseorbit: Calculate the closed orbit. Default 1.
+%   closedorbit: Only valid if docloseorbit is 0.
+%               Defines the closed orbit (6,1). Default zeros(6,1).
+%   centeronorbit: Add the closed orbit to the tracked particles.
+%               Default 1.
+%   nangles:    Split the boundary on n equal sectors. Default 180.
+%   parallel:   Not implemented yet.
+%   epsilon_offset: Small deviation to add to the tracked coordinates.
+%               Default [10e-5 10e-5].
 % 
 % Returns:
-%     boundary:   (2,n) array: Coordinates of dynamic aperture boundary
-%     notlost:    (2,n) array: Coordinates of tracked particles that have survived
-%     lost:       (3,n) array: Coordinates of tracked particles that have not survived,
-%                              and turn in which each got lost.
+%     boundary: (2,n) array: Coordinates of dynamic aperture boundary
+%     notlost:  (2,n) array: Initial coordinates of tracked particles that
+%               have survived.
+%     lost:     (3,n) array: Initial coordinates of tracked particles that
+%               have not survived, and turn in which each got lost.
 % 
 % Example:
-%     [b, nl, l] = floodfill(THERING, nturns=500)                         
+%     [b, nl, l] = floodfill(THERING, nturns=500)
 
-% Author : E. Serra,  ALBA,  2025 original version in python
-% Edited : O. Blanco, ALBA,  2025 matlab version
+% Author : E. Serra,  UAB and ALBA,  2025 original version in python
+% Edited : O. Blanco, ALBA,          2025 matlab version
 
 % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Parse optional arguments
@@ -33,16 +57,17 @@ function [ boundary, pnotlostdata, plostdata] = floodfill(ring, varargin)
     addOptional(p,'window',[-10e-3,10e-3,-5e-3,5e-3]);
     addOptional(p,'delta',0);
     addOptional(p,'gridsize',[10,10]);
+    addOptional(p,'axes',[1,3]);
     addOptional(p,'sixdoffset',zeros(6,1));
+    addOptional(p,'userefcenter',0);
     addOptional(p,'refcenter',zeros(6,1));
     addOptional(p,'verbose',0);
     addOptional(p,'docloseorbit',1);
     addOptional(p,'closeorbit',zeros(6,1));
     addOptional(p,'centeronorbit',1);
-    addOptional(p,'axes',[1,3]);
     addOptional(p,'nangles',180);
     addOptional(p,'parallel',false);
-    addOptional(p,'epsilon_offset',1e-5);
+    addOptional(p,'epsilon_offset',[1e-5 1e-5]);
     parse(p,varargin{:});
     par = p.Results;
 
@@ -52,6 +77,7 @@ function [ boundary, pnotlostdata, plostdata] = floodfill(ring, varargin)
     delta = par.delta;
     gridsize = par.gridsize;
     sixdoffset = par.sixdoffset;
+    userefcenter = par.userefcenter;
     refcenter = par.refcenter;
     verbose = par.verbose;
     docloseorbit = par.docloseorbit;
@@ -61,6 +87,10 @@ function [ boundary, pnotlostdata, plostdata] = floodfill(ring, varargin)
     nangles = par.nangles;
     parallel = par.parallel;
     epsilon_offset = par.epsilon_offset;
+
+    if verbose
+        fprintf('Flood fill starts.\n');
+    end
    
     %% Create the particle grid
     xvals = linspace(window(1),window(2),gridsize(1));
@@ -69,6 +99,9 @@ function [ boundary, pnotlostdata, plostdata] = floodfill(ring, varargin)
     ny = length(yvals);
     npart = nx*ny;
     points = zeros(2,npart);
+    if verbose
+        fprintf('Points to be checked %d.\n',npart);
+    end
     ii = 1;
     for ix = 1:nx
         for iy = 1:ny
@@ -77,23 +110,38 @@ function [ boundary, pnotlostdata, plostdata] = floodfill(ring, varargin)
         end
     end
     if docloseorbit
+        if verbose
+            fprintf("Calculating the closed orbit.\n");
+        end
         if check_6d(ring)
+            if verbose
+                fprintf('Ring is 6D.\n')
+            end
             closed = findorbit6(ring);
         else
+            if verbose
+                fprintf('Ring is 4D.\n')
+            end
             closed = [findorbit4(ring); 0 ; 0];
         end
     else
+        if verbose
+            fprintf('Using the given closed orbit.\n')
+        end
         closed = closeorbit;
     end
-    if centeronorbit 
+    if centeronorbit
+        if verbose
+            fprintf('Centering on orbit.\n');
+        end
         sixdoffset = sixdoffset + closed;
     end
     particles = zeros(6,npart);
     particles = particles + sixdoffset;
     particles(axes(1),:) = particles(axes(1),:) + points(1,:);
     particles(axes(2),:) = particles(axes(2),:) + points(2,:);
-    particles(1,:) = particles(1,:)  + epsilon_offset;
-    particles(3,:) = particles(3,:)  + epsilon_offset;
+    particles(1,:) = particles(1,:)  + epsilon_offset(1);
+    particles(3,:) = particles(3,:)  + epsilon_offset(2);
     particles(5,:) = particles(5,:)  + delta;
 
     %% Track the particles for nturns using the flood-fill algorithm
@@ -105,6 +153,11 @@ function [ boundary, pnotlostdata, plostdata] = floodfill(ring, varargin)
     thequeue(nx+ny:nx+ny+ny-2) = ((nx-1)*ny+2):(nx*ny); % right side
     thequeue(nx+ny+ny-1:nx+ny+ny+nx-4) = (1:(nx-2))*ny+ny; % bottom side
     idxpartdone = []; % Keep count of the particles that have been tracked
+
+    if verbose
+        fprintf('Tracking...\n');
+    end
+
     while ~isempty(thequeue)
         i = thequeue(end); % Take the first particle out of the queue and track it:
         thequeue(end) = [];
@@ -112,10 +165,14 @@ function [ boundary, pnotlostdata, plostdata] = floodfill(ring, varargin)
             idxpartdone(end+1) = i;
             [~, ~, ~, lossinfo] = ringpass(ring, particles(:,i), nturns);
             if lossinfo.lost % If the particle is lost,
-                thequeue(end+1) = i+1;  % track the particle on its right
-                thequeue(end+1) = i-1;  % left
-                thequeue(end+1) = i+nx; % bottom
-                thequeue(end+1) = i-nx; % and top
+                masknext =  [...
+                            ~ismember(i+1,idxpartdone), ...
+                            ~ismember(i-1,idxpartdone), ...
+                            ~ismember(i+nx,idxpartdone), ...
+                            ~ismember(i-nx,idxpartdone), ...
+                            ];
+                nextpoints = nonzeros(masknext .* [i+1 i-1 i+nx i-nx])';
+                thequeue= [thequeue nextpoints];
                 plostdata(:,end+1) = [ ...
                                         particles(axes(1),i); ...
                                         particles(axes(2),i); ...
@@ -130,13 +187,30 @@ function [ boundary, pnotlostdata, plostdata] = floodfill(ring, varargin)
         end
     end
 
+    if verbose
+        fprintf('Tracking done.\n');
+    end
+
     % debug
     % figure; scatter(pnotlostdata(1,:),pnotlostdata(2,:))
     % figure; scatter(plostdata(1,:),plostdata(2,:))
     
     %% Define the Dynamic Aperture boundary as the notlost particles closest to the center
     % Define distance to reference
-    thecenter2d = definecenter(refcenter, axes, epsilon_offset);
+    if userefcenter
+        if verbose
+            fprintf('Using the defined center.\n');
+        end
+        refc = refcenter;
+    else
+        if verbose
+            fprintf('Calculating the barycenter.\n');
+        end
+        refc = zeros(6,1);
+        refc(axes(1)) = mean(pnotlostdata(1,:));
+        refc(axes(2)) = mean(pnotlostdata(2,:));
+    end
+    thecenter2d = definecenter(refc, axes, epsilon_offset);
     [radii, thetas] = calcdistance(pnotlostdata,thecenter2d);
     [radii_lost, thetas_lost] = calcdistance(plostdata,thecenter2d);
 
@@ -144,26 +218,13 @@ function [ boundary, pnotlostdata, plostdata] = floodfill(ring, varargin)
     % figure; polarplot(thetas,radii,'o')
     % figure; polarplot(thetas_lost,radii_lost,'o')
 
-    quadrants = false(1,4);
-    if window(2) > refcenter(1) && window(4) > refcenter(3)
-        quadrants(1) = true;
+    if verbose
+        fprintf('Finding the boundary sector by sector.\n');
     end
-    if window(1) < refcenter(1) && window(4) > refcenter(3)
-        quadrants(2) = true;
-    end
-    if window(1) < refcenter(1) && window(3) < refcenter(3)
-        quadrants(3) = true;
-    end
-    if window(2) > refcenter(1) && window(3) < refcenter(3)
-        quadrants(4) = true;
-    end
-   
-    % angle range is defined by  the quadrants
-    shifted_qu = circshift(quadrants,2);
-    anglerange = (pi/2*(0:3)-pi+pi/4) .* shifted_qu;
-    anglemin =min(anglerange(shifted_qu))-pi/4;
-    anglemax =max(anglerange(shifted_qu))+pi/4;
-
+    % Divide the circle in sectors and check if particles survive.
+    % Then, choose the one with lowest amplitude.
+    anglemin = -pi;
+    anglemax = pi;
     halftheangle = (anglemax-anglemin) / (2*nangles);
     angles = linspace(anglemin, anglemax, nangles);
     angles = angles(1:end-1);
@@ -171,7 +232,7 @@ function [ boundary, pnotlostdata, plostdata] = floodfill(ring, varargin)
     boundary = [];
     for theangle = angles % interval [-pi,pi)
         % find the notlost particles in every sector
-        if theangle == angles(1) && quadrants(3) && quadrants(2)
+        if theangle == angles(1)
             % Special case theta = -pi = pi
             sector =        (thetas      >= (angles(end-1) + halftheangle)) ...
                           | (thetas      <  (theangle + halftheangle));
@@ -183,24 +244,24 @@ function [ boundary, pnotlostdata, plostdata] = floodfill(ring, varargin)
             sector_lost =   (thetas_lost >= (theangle - halftheangle)) ...
                           & (thetas_lost <  (theangle + halftheangle));
         end
-        % and select the one with the minimum radius
-        if any(sector) && any(sector_lost)
-            %fprintf('%.3f\n',theangle);
-            idx_tmp = find(sector);
-            idx_candidates = idx_tmp(1);
-            [~, idx_tmp] = min(radii(idx_candidates));
-            idx_minimum = idx_candidates(idx_tmp); 
-            minimum_radius = radii(idx_minimum);
-            idx_tmp = find(sector_lost);
-            radiuses_sector_lost = radii_lost(idx_tmp(1));
-            if all((minimum_radius <= 1.1*radiuses_sector_lost))
-                % to make sure it is not an outlier
+        % and select the one with the minimum radius per sector
+        if any(sector)
+            idx_candidates = find(sector);
+            [minimum_radius, idx_minimum_candidate] = min(radii(sector));
+            idx_minimum_rad = idx_candidates(idx_minimum_candidate);
+            radii_sector_lost = radii_lost(sector_lost);
+            if ~any(sector_lost) || ...
+                    all((minimum_radius <= 1.1*radii_sector_lost))
                 boundary(:,end+1) = [ ...
-                                        pnotlostdata(1,idx_minimum), ...
-                                        pnotlostdata(2,idx_minimum) ...
+                                        pnotlostdata(1,idx_minimum_rad), ...
+                                        pnotlostdata(2,idx_minimum_rad) ...
                                     ];
             end
         end
+    end
+
+    if verbose
+        fprintf('Flood fill has finished.\n');
     end
 end
 
@@ -209,8 +270,8 @@ function the2dcenter = definecenter(refcenter,axes,offset)
 %
 %  Define the center coordinates [x1,x2] from the 6d refcenter,
 %  the axes, and the offset for tracking
-    x1 = refcenter(axes(1)) + (axes(1) == 1)*offset;
-    x2 = refcenter(axes(2)) + (axes(1) == 3)*offset;
+    x1 = refcenter(axes(1)) + (axes(1) == 1)*offset(1);
+    x2 = refcenter(axes(2)) + (axes(1) == 3)*offset(2);
     the2dcenter = [x1; x2];
 end
 
@@ -218,8 +279,13 @@ function [radii,thetas] = calcdistance(twod_points,thecenter)
 %  [radii,thetas] = calcdistance(twod_points,thecenter)
 %
 %  Calculate the radii and angles for a number of 2D points and a center
-    distax1 = twod_points(1,:) - thecenter(1);
-    distax2 = twod_points(2,:) - thecenter(2);
-    radii = sqrt( distax1.^2 + distax2.^2);
-    thetas = atan2( distax2, distax1);
+    if ~isempty(twod_points)
+        distax1 = twod_points(1,:) - thecenter(1);
+        distax2 = twod_points(2,:) - thecenter(2);
+        radii = sqrt( distax1.^2 + distax2.^2);
+        thetas = atan2( distax2, distax1);
+    else
+        radii = [];
+        thetas = [];
+    end
 end
