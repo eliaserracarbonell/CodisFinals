@@ -1,51 +1,70 @@
 function [ boundary, pnotlostdata, plostdata] = floodfill(ring, varargin)
 % [ boundary, pnotlostdata, plostdata] = floodfill(ring)
 %
-% Finds the D.A. of the lattice using Flood Fill.
+% Finds the D.A. of the ring using Flood Fill.
 %
 % Flood fill tracks particles from the exterior to the border of the D.A.
 % The lost particles are returned in plostdata.
 % The not lost particles are returned in pnotlostdata.
-% The boundary is found by choosing a center and spliting the space in n
-% sectors. Then, the particle with minimum distance to the center per
-% sector returned as part of the boundary.
-% 
+% The boundary is approximated by choosing a center and spliting the space
+% in n sectors. Then, the not lost particle with minimum distance to the
+% center per sector is returned as part of the boundary. Sectors without
+% data are interpolated, it typically happens when the grid steps are large.
+%
+%
 % Parameters:
 %   ring:       AT lattice.
 % 
 % Keyword Arguments:
 %   nturns:     Number of turns for the tracking. Default: 1000
-%   window:     Min and max coordinate range.
+%   window:     Min and max coordinate range [xmin,xmax,ymin,ymax].
 %               Default [-10e-3,10e-3,-5e-3,5e-3]
 %   delta:      Momentum offset dp/p. Default: 0
 %   gridsize:   Number of steps per axis. Default [10,10]
-%   axes:       Indexes of axes to be scanned. Default [1,3]
+%   axes:       Indexes of axes to be scanned. Default is x-y, [1,3]
 %   sixdoffset: Offset to be added. Default zeros(6,1)
 %   userefcenter: Use the 'refcenter' as the boundary center. Default 0.
+%               If not given or it is equal to zero, the mean coordinate
+%               of the surviving particles is calculated per axis, and
+%               used as reference center for the boundary definition.
+%               If not zero, it uses the coordinates given in 'refcenter'.
 %   refcenter:  Used only when 'userefcenter' is not 0.
 %               Define the center of the boundary (6,1).
-%               If not given the mean coordinate of the surviving
-%               particles is calculated per axis.
 %   verbose:    Print extra info. Default 0.
 %   docloseorbit: Calculate the closed orbit. Default 1.
-%   closedorbit: Only valid if docloseorbit is 0.
-%               Defines the closed orbit (6,1). Default zeros(6,1).
+%               If set to zero, the closed orbit is taken from
+%               'closedorbit'.
+%   closedorbit: Only used if 'docloseorbit' is 0.
+%               Defines the closed orbit (6,1). Default zeros(6,1). 
 %   centeronorbit: Add the closed orbit to the tracked particles.
 %               Default 1.
-%   nangles:    Split the boundary on n equal sectors. Default 180.
+%   nangles:    Number or boundary points returned, it corresponds to
+%               n equal arc sectors. Default 180.
 %   parallel:   Not implemented yet.
 %   epsilon_offset: Small deviation to add to the tracked coordinates.
 %               Default [10e-5 10e-5].
 % 
 % Returns:
-%     boundary: (2,n) array: Coordinates of dynamic aperture boundary
-%     notlost:  (2,n) array: Initial coordinates of tracked particles that
-%               have survived.
-%     lost:     (3,n) array: Initial coordinates of tracked particles that
-%               have not survived, and turn in which each got lost.
+%     boundary: (2,nangles) array: Coordinates of dynamic aperture boundary
+%     notlost:  (2,n_not_lost) array: Initial coordinates of tracked
+%               particles thatv have survived.
+%     lost:     (3,n_lost) array: Initial coordinates of tracked particles
+%               that have not survived, and in the third component the turn
+%               in which each got lost.
 % 
 % Example:
 %     [b, nl, l] = floodfill(THERING, nturns=500)
+%
+%
+% Notes:
+% This method is recomended for single or low number of CPUs, but,
+% it doesn't not scale well for parallel computing.
+% Based on the article,
+%   B. Riemann, M. Aiba, J. Kallestrup, and A. Streun, "Efficient
+%   algorithms for dynamic aperture and momentum acceptance
+%   calculation in synchrotron light sources", Phys. Rev. Accel.
+%   Beams, vol. 27, no. 9, p. 094 002, 2024.
+%   doi:10.1103/PhysRevAccelBeams.27.094002
 
 % Author : E. Serra,  UAB and ALBA,  2025 original version in python
 % Edited : O. Blanco, ALBA,          2025 matlab version
@@ -95,6 +114,8 @@ function [ boundary, pnotlostdata, plostdata] = floodfill(ring, varargin)
     %% Create the particle grid
     xvals = linspace(window(1),window(2),gridsize(1));
     yvals = linspace(window(3),window(4),gridsize(2));
+    xamp = abs(window(2)-window(1));
+    yamp = abs(window(4)-window(3));
     nx = length(xvals);
     ny = length(yvals);
     npart = nx*ny;
@@ -155,7 +176,7 @@ function [ boundary, pnotlostdata, plostdata] = floodfill(ring, varargin)
     idxpartdone = []; % Keep count of the particles that have been tracked
 
     if verbose
-        fprintf('Tracking...\n');
+        fprintf('Tracking... ');
     end
 
     while ~isempty(thequeue)
@@ -188,7 +209,7 @@ function [ boundary, pnotlostdata, plostdata] = floodfill(ring, varargin)
     end
 
     if verbose
-        fprintf('Tracking done.\n');
+        fprintf(' done.\n');
     end
 
     % debug
@@ -210,9 +231,12 @@ function [ boundary, pnotlostdata, plostdata] = floodfill(ring, varargin)
         refc(axes(1)) = mean(pnotlostdata(1,:));
         refc(axes(2)) = mean(pnotlostdata(2,:));
     end
+    pnotlostdata_norm = pnotlostdata(1:2,:) ./ [xamp;yamp];
+    plostdata_norm = plostdata(1:2,:) ./ [xamp;yamp];
     thecenter2d = definecenter(refc, axes, epsilon_offset);
-    [radii, thetas] = calcdistance(pnotlostdata,thecenter2d);
-    [radii_lost, thetas_lost] = calcdistance(plostdata,thecenter2d);
+    thecenter2d_norm = thecenter2d ./ [xamp;yamp];
+    [radii, thetas] = calcdistance(pnotlostdata_norm,thecenter2d_norm);
+    [radii_lost, thetas_lost] = calcdistance(plostdata_norm,thecenter2d_norm);
 
     % debug
     % figure; polarplot(thetas,radii,'o')
@@ -226,24 +250,18 @@ function [ boundary, pnotlostdata, plostdata] = floodfill(ring, varargin)
     anglemin = -pi;
     anglemax = pi;
     halftheangle = (anglemax-anglemin) / (2*nangles);
-    angles = linspace(anglemin, anglemax, nangles);
-    angles = angles(1:end-1);
+    angles = -pi+halftheangle:(2*halftheangle):pi-halftheangle;
+    lenangles = length(angles);
     % Dynamic aperture
-    boundary = [];
-    for theangle = angles % interval [-pi,pi)
+    boundary_points = [];
+    angles_with_boundary_data = zeros(size(angles));
+    for ii = 1:lenangles % interval [-pi,pi)
+        theangle = angles(ii);
         % find the notlost particles in every sector
-        if theangle == angles(1)
-            % Special case theta = -pi = pi
-            sector =        (thetas      >= (angles(end-1) + halftheangle)) ...
-                          | (thetas      <  (theangle + halftheangle));
-            sector_lost =   (thetas_lost >= (angles(end-1) + halftheangle)) ...
-                          | (thetas_lost <  (theangle + halftheangle));
-        else
-            sector =        (thetas >= (theangle - halftheangle)) ...
-                          & (thetas <  (theangle + halftheangle));
-            sector_lost =   (thetas_lost >= (theangle - halftheangle)) ...
-                          & (thetas_lost <  (theangle + halftheangle));
-        end
+        sector =        (thetas >= (theangle - halftheangle)) ...
+                      & (thetas <  (theangle + halftheangle));
+        sector_lost =   (thetas_lost >= (theangle - halftheangle)) ...
+                      & (thetas_lost <  (theangle + halftheangle));
         % and select the one with the minimum radius per sector
         if any(sector)
             idx_candidates = find(sector);
@@ -252,13 +270,30 @@ function [ boundary, pnotlostdata, plostdata] = floodfill(ring, varargin)
             radii_sector_lost = radii_lost(sector_lost);
             if ~any(sector_lost) || ...
                     all((minimum_radius <= 1.1*radii_sector_lost))
-                boundary(:,end+1) = [ ...
+                        boundary_points(:,end+1) = [ ...
                                         pnotlostdata(1,idx_minimum_rad), ...
                                         pnotlostdata(2,idx_minimum_rad) ...
                                     ];
+                angles_with_boundary_data(ii) = 1;
             end
         end
     end
+
+    % interpolate the angles with missing data
+    if verbose
+        ninterpolated = sum(angles_with_boundary_data == 0);
+        fprintf('Interpolate %d points.\n',ninterpolated);
+    end
+    uu=linspace(0,1,lenangles);
+    xinterp = interp1(uu(angles_with_boundary_data == 1), ...
+                boundary_points(1,:),uu(angles_with_boundary_data == 0));
+    yinterp = interp1(uu(angles_with_boundary_data == 1), ...
+                boundary_points(2,:),uu(angles_with_boundary_data == 0));
+
+    % join data points and interpolated points
+    boundary = zeros(2,lenangles);
+    boundary(:,angles_with_boundary_data == 1) = boundary_points;
+    boundary(:,angles_with_boundary_data == 0) = [xinterp; yinterp];
 
     if verbose
         fprintf('Flood fill has finished.\n');
